@@ -1,5 +1,5 @@
 "My complete webscraper"
-"Example webpage https://forums.gearboxsoftware.com/c/borderlands-3/borderlands-3-news/247"
+"Example webpage https://forums.unrealengine.com/tags/c/community/marketplace/51/launcher"
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
@@ -18,11 +18,7 @@ init
 main -> runScraper
 runScraper -> getLinks
 getLinks -> scroll -> then returns links
-
-"""
-"""
-TODO: Ensure leading posts are imported correctly
-TODO: Add functions to collect other features (Replies, Views, Number of replies, tags)
+links -> get data (title, replies, tags, views, leading post)
 """
 
 class webScrape:
@@ -31,19 +27,26 @@ class webScrape:
     PostDict= {}
     PostDf= pd.DataFrame(columns= [
         'Post_Title',
+        'Num_Views',
+        'Num_Replies',
         'Leading_Post',
+        'Tags',
         'Date_Created'
     ])
 
-    def __init__(self):
-        #Set up webdriver
+    opts = Options()
+    opts.add_argument('--headless')
+    opts.add_argument('--incognito')
+    driver= webdriver.Chrome(service= Service(ChromeDriverManager().install()), options=opts)
+
+    def driverReset(self):
         opts = Options()
         opts.add_argument('--headless')
         opts.add_argument('--incognito')
-        self.driver= webdriver.Chrome(service= Service(ChromeDriverManager().install()), options=opts)
+        driver= webdriver.Chrome(service= Service(ChromeDriverManager().install()), options=opts)
 
     #Scrolls through the webpage
-    def scroll(driver, timeout):
+    def scroll(self, driver, timeout):
         scroll_pause_time= timeout
 
         driver.execute_script("window.scrollTo(0,document.body.scrollHeight)")
@@ -72,11 +75,23 @@ class webScrape:
         if Title is None:
             Title= 'No Title'
 
-        return Title
+        return Title 
+
+    def getTags(Topicsoup):
+        soup= Topicsoup
+        Tags= PostSoup.find_all(class_='discourse-tag bullet').text
+
+        if len(Tags)==0:
+            Tags='No Tags'
+
+        return Tags
+
 
     #Getting the Leading post of the post
     def getLeadingPost(Topicsoup):
-        LeadingPost= Topicsoup.div.find(class_='post').text
+        cooked= PostSoup.find(class_='cooked').find_all('p')
+        for Lpost in cooked:
+            LeadingPost= Lpost.text
 
         if LeadingPost is None:
             LeadingPost = str(0)
@@ -85,21 +100,37 @@ class webScrape:
 
     #Getting the dates created
     def getDateCreated(Topicsoup):
-        DateCreated= soup.div.find('time', class_='post-time').text
+        DateCreated= Topicsoup.find(class_='relative-date').text
 
         if DateCreated is None:
             DateCreated = str(0)
 
         return DateCreated
 
+    def getNum_Views(Topicsoup):
+        Views= Topicsoup.find(class_='secondary views').find(class_='number').text
+        if Views is None:
+            Views= 0
+
+        return Views
+
+    def getNum_Replies(Topicsoup):
+        Replies= Topicsoup.find(class_='replies').find(class_='number').text
+        if Replies is None:
+            Replies= 0
+
+        return Replies
+
+
     # Getting the links
     def getLinks(self, url):
+        driver= self.driver
         #waiting for page to load
         driver.implicitly_wait(30)
         #getting driver to open link
         driver.get(url)
         #using scroll function to scroll to the bottom
-        scroll(driver, 2)
+        self.scroll(driver, 2)
         #Getting html from entire webpage
         Bsoup= BeautifulSoup(driver.page_source, 'lxml')
         #closing driver
@@ -111,16 +142,29 @@ class webScrape:
         #Getting all the links in the webpage
         for link in Bsoup.find_all('a', class_='title raw-link raw-topic-link'):
             Links.append(link['href'])
+            print(link)
 
         return Links
 
-    def runScraper(self, SiteName):
-
-        Links= webScrape.getLinks('https://forums.gearboxsoftware.com/c/borderlands-3/borderlands-3-news/247')
-
+    def runScraper(self, SiteName, Links):
+        
+        
         for link in Links:
+
+            """
+            TODO: Fix Link Error
+            Find a way to distinguish between the links in the webpage
+            Some links come with 'https://forums.unrealengine.com' while others only come
+            with the latter half
+            """
+            self.driverReset()
             #Opens the links as they come as parts on the webpage
-            self.driver.get('https://forums.gearboxsoftware.com'+link)
+            # Some links come in as complete so this if statement determines which come in complete and which comes in as part
+            if 'https:' in str(link['href']):
+                url= link
+            else:
+                url='https://forums.unrealengine.com'+link
+            self.driver.get(url)
             #Page HTML stored in PHTML
             PHTML= self.driver.page_source
             #Page Soup stored in PSoup
@@ -130,12 +174,20 @@ class webScrape:
             Post_Title= self.getTitle(PSoup)
             Leading_Post= self.getLeadingPost(PSoup)
             Date_Created= self.getDateCreated(PSoup)
+            numViews= self.getNum_Views(PSoup)
+            numReplies= self.getNum_Replies(PSoup)
+            Tags= self.getTags(PSoup)
+            
 
             #Attribute dictionary where we'll temporarily store the data we collect
             attributeDict= {
                 'Post_Title': Post_Title,
                 'Leading_Comment': Leading_Post,
-                'Date_Created': Date_Created
+                'Date_Created': Date_Created,
+                'num_of_Views': numViews,
+                'num_of_Replies': numReplies,
+                'Tags': Tags,
+                'Link': link
             }
             self.PostDict[Post_Title]= attributeDict
             self.PostDf= self.PostDf.append(attributeDict, ignore_index= True)
@@ -150,24 +202,27 @@ class webScrape:
 
         #Setting up csv file
         "Please put your name here"
-        csvFilename = 'NameHere' + '_SCRAPED_DATA' + timeStamp + '.csv'
+        csvFilename = SiteName + '_SCRAPED_DATA' + timeStamp + '.csv'
+        #TODO: Change to a file path as __file__ has the tendency to fail
         csvFileFullPath = os.path.join(os.path.dirname(os.path.realpath(__file__)), csvFilename)
         # Save dataframe into csv file
-        self.topic_df.to_csv(csvFileFullPath)
+        self.PostDf.to_csv(csvFileFullPath)
 
 if __name__ =='__main__':
     #Local path to the webdriver
     #webdriverPath = r'C:\Users\savan\Desktop\Coding and Software\Stemaway Coding Stuff\chromedriver.exe'
     
     # Forum to scrape URL    
-    BaseURL = 'https://forums.gearboxsoftware.com/c/borderlands-3/borderlands-3-news/247'
+    BaseURL = 'https://forums.unrealengine.com/tags/c/community/marketplace/51/launcher'
     
     # Name of the forum
-    SiteName = 'Boarderlands'
+    SiteName = 'UnrealEngineMarketplace'
         
     # WebScraping object
     webScrape = webScrape()
+
+    Links= webScrape.getLinks(BaseURL)
     
     # Run the webscraper and save scraped data
-    webScrape.runScraper(SiteName)
+    webScrape.runScraper(SiteName, Links)
         
