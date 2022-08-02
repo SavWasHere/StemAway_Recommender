@@ -142,7 +142,7 @@ class webScrape:
         #Getting all the links in the webpage
         for link in Bsoup.find_all('a', class_='title raw-link raw-topic-link'):
             Links.append(link['href'])
-            print(link)
+            print(link.text)
 
         return Links
 
@@ -160,7 +160,8 @@ class webScrape:
             self.driverReset()
             #Opens the links as they come as parts on the webpage
             # Some links come in as complete so this if statement determines which come in complete and which comes in as part
-            if 'https:' in str(link['href']):
+            linkSplit= str(link['href']).split
+            if 'https:' in str(linkSplit):
                 url= link
             else:
                 url='https://forums.unrealengine.com'+link
@@ -203,7 +204,6 @@ class webScrape:
         #Setting up csv file
         "Please put your name here"
         csvFilename = SiteName + '_SCRAPED_DATA' + timeStamp + '.csv'
-        #TODO: Change to a file path as __file__ has the tendency to fail
         csvFileFullPath = os.path.join(os.path.dirname(os.path.realpath(__file__)), csvFilename)
         # Save dataframe into csv file
         self.PostDf.to_csv(csvFileFullPath)
