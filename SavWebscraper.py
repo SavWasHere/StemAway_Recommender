@@ -151,12 +151,6 @@ class webScrape:
         
         for link in Links:
 
-            """
-            TODO: Fix Link Error
-            Find a way to distinguish between the links in the webpage
-            Some links come with 'https://forums.unrealengine.com' while others only come
-            with the latter half
-            """
             self.driverReset()
             #Opens the links as they come as parts on the webpage
             # Some links come in as complete so this if statement determines which come in complete and which comes in as part
