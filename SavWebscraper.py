@@ -1,222 +1,214 @@
-"My complete webscraper"
-"Example webpage https://forums.unrealengine.com/tags/c/community/marketplace/51/launcher"
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.service import Service
-from selenium import webdriver
-from bs4 import BeautifulSoup
-from urllib.request import urlopen
-from datetime import datetime
-import requests, os, time
-import pandas as pd
-import numpy as np
+import time
+import os
+import requests
 import regex as re
+import numpy as np
+import pandas as pd
+from datetime import datetime
+from urllib.request import urlopen
+from bs4 import BeautifulSoup
+import bs4
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.options import Options
 
 """
-Class structure
-init
-main -> runScraper
-runScraper -> getLinks
-getLinks -> scroll -> then returns links
-links -> get data (title, replies, tags, views, leading post)
+My complete webscraper
+Example webpage https://forums.unrealengine.com/tags/c/community/marketplace/51/launcher
 """
 
-class webScrape:
+#Setting up storage for the csv and showing the data we want to collect
+PostDict= {}
+#Q- Why use pandas DataFrame?
+#A- It stores the data in the csv in columns designated by the columns here, making it easy to read
+# Check csv file provided to see how it looks
+PostDf= pd.DataFrame(columns= [
+    'Post_Title',
+    'Num_Views',
+    'Num_Replies',
+    'Leading_Post',
+    'Tags',
+    'Date_Created'
+])
 
-    browser= None
-    PostDict= {}
-    PostDf= pd.DataFrame(columns= [
-        'Post_Title',
-        'Num_Views',
-        'Num_Replies',
-        'Leading_Post',
-        'Tags',
-        'Date_Created'
-    ])
+#Setting up driver DO NOT CHANGE UNLESS YOU HAVE TO ADD AN ARGUMENT
+#Ensure your driver is in the same file as your webscraper
+opts = Options()
+opts.add_argument('--headless')
+opts.add_argument('--incognito')
+driver= webdriver.Chrome(service= Service(ChromeDriverManager().install()), options=opts)
 
-    opts = Options()
-    opts.add_argument('--headless')
-    opts.add_argument('--incognito')
-    driver= webdriver.Chrome(service= Service(ChromeDriverManager().install()), options=opts)
+#Link goes here
+"""
+When putting your link, I recommend going into the category and pasting the link here since this webscraper gathers
+data on all the posts. To make it easy and save time and processing, I ask that you go to forums.unrealengine.com 
+and go to your desired category to scrape and get that link rather than just using forums.unrealengine.com
+"""
+BaseLink='https://forums.unrealengine.com/tags/c/community/marketplace/51/launcher'
+driver.get(BaseLink)
 
-    def driverReset(self):
-        opts = Options()
-        opts.add_argument('--headless')
-        opts.add_argument('--incognito')
-        driver= webdriver.Chrome(service= Service(ChromeDriverManager().install()), options=opts)
+#Scrolls to the bottom of the webpage
 
-    #Scrolls through the webpage
-    def scroll(self, driver, timeout):
-        scroll_pause_time= timeout
+def scroll(driver, timeout):
+    scroll_pause_time = timeout
 
-        driver.execute_script("window.scrollTo(0,document.body.scrollHeight)")
+    # Get scroll height
+    last_height = driver.execute_script("return document.body.scrollHeight")
 
-        # Load the entire webage by scrolling to the bottom
-        lastHeight = driver.execute_script("window.scrollTo(0,document.body.scrollHeight)")
+    while True:
+        # Scroll down to bottom
+        driver.execute_script(
+            "window.scrollTo(0, document.body.scrollHeight);")
 
-        while (True):
-            # Scroll to bottom of page
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            # Wait for new page segment to load
-            time.sleep(scroll_pause_time)
+        # Wait to load page
+        time.sleep(scroll_pause_time)
 
-            # Calculate new scroll height and compare with last scroll height
-            newHeight = driver.execute_script("return document.body.scrollHeight")
-            if newHeight == lastHeight:
-                break
+        # Calculate new scroll height and compare with last scroll height
+        new_height = driver.execute_script("return document.body.scrollHeight")
+        if new_height == last_height:
+            # If heights are the same it will exit the function
+            break
+        last_height = new_height
 
-            lastHeight = newHeight
+        print(f'New Height= {new_height}')
 
-    #Getting the title of the post
-    def getTitle(Topicsoup):
-        soup= Topicsoup
+scroll(driver, 3)
+
+#Gets the BeautifulSoup object of the webpage's HTML
+soup_2 = BeautifulSoup(driver.page_source, 'lxml')
+
+#Getting the title of the post
+def getTitle(Topicsoup):
+    soup= Topicsoup
+    Title = soup.find('title')
+    if Title is None:
+        Title= 'No Title'
+    else:
         Title= soup.find('title').text
+    return Title
 
-        if Title is None:
-            Title= 'No Title'
+#Gets the tag in the post
+def getTags(Topicsoup):
+    soup= Topicsoup
+    Tags=[]
+    TagsRes= PostSoup.find_all(class_='discourse-tag bullet')
+    if len(TagsRes)==0:
+        Tags='No Tags'
+    else:
+        for tag in TagsRes:
+            Tags.append(tag.text)
+    return Tags
 
-        return Title 
+#Getting the Leading post of the Topic
+"""
+cooked= everything in the html of the class 'cooked'. This typically host the post data
+If the webpage doesn't load, cooked will be empty so I check if it is None. If it is then no post.
+If it is not None, there is a post and I extract the text by taking all the p (paragraphs)
+"""
+def getLeadingPost(Topicsoup):
+    LeadPost=[]
+    cooked= PostSoup.find_all(class_='cooked')
+    if cooked is None:
+        LeadPost.append('0')
+    else:
+        for post in cooked:
+            if isinstance(post, bs4.element.Tag):
+                LeadText= post.find_all('p')
+                for Lpost in LeadText:
+                    LeadPost.append(Lpost.text)
 
-    def getTags(Topicsoup):
-        soup= Topicsoup
-        Tags= PostSoup.find_all(class_='discourse-tag bullet').text
+    return LeadPost
 
-        if len(Tags)==0:
-            Tags='No Tags'
-
-        return Tags
-
-
-    #Getting the Leading post of the post
-    def getLeadingPost(Topicsoup):
-        cooked= PostSoup.find(class_='cooked').find_all('p')
-        for Lpost in cooked:
-            LeadingPost= Lpost.text
-
-        if LeadingPost is None:
-            LeadingPost = str(0)
-
-        return LeadingPost
-
-    #Getting the dates created
-    def getDateCreated(Topicsoup):
+#Getting the dates created
+def getDateCreated(Topicsoup):
+    DateCreated= Topicsoup.find(class_='relative-date')
+    if DateCreated is None:
+        DateCreated = str(0)
+    else:
         DateCreated= Topicsoup.find(class_='relative-date').text
+    return DateCreated
 
-        if DateCreated is None:
-            DateCreated = str(0)
+#Gets the number of views
+def getNum_Views(Topicsoup):
+    SecViews= Topicsoup.find(class_='secondary views')
+    if SecViews is None:
+        Views= 0
+    else:
+        Views= SecViews.find(class_='number').text
+    return Views
 
-        return DateCreated
+#Gets the number of replies
+def getNum_Replies(Topicsoup):
+    ClReplies= Topicsoup.find(class_='replies')
+    if ClReplies is None:
+        Replies= 0
+    else:
+        Replies= ClReplies.find(class_='number').text
+    return Replies
 
-    def getNum_Views(Topicsoup):
-        Views= Topicsoup.find(class_='secondary views').find(class_='number').text
-        if Views is None:
-            Views= 0
+#Gets all the links
+Links= soup_2.find_all('a', class_='title raw-link raw-topic-link')
 
-        return Views
-
-    def getNum_Replies(Topicsoup):
-        Replies= Topicsoup.find(class_='replies').find(class_='number').text
-        if Replies is None:
-            Replies= 0
-
-        return Replies
-
-
-    # Getting the links
-    def getLinks(self, url):
-        driver= self.driver
-        #waiting for page to load
-        driver.implicitly_wait(30)
-        #getting driver to open link
-        driver.get(url)
-        #using scroll function to scroll to the bottom
-        self.scroll(driver, 2)
-        #Getting html from entire webpage
-        Bsoup= BeautifulSoup(driver.page_source, 'lxml')
-        #closing driver
-        driver.close()
-
-        #List to store the links we will get
-        Links=[]
-
-        #Getting all the links in the webpage
-        for link in Bsoup.find_all('a', class_='title raw-link raw-topic-link'):
-            Links.append(link['href'])
-            print(link.text)
-
-        return Links
-
-    def runScraper(self, SiteName, Links):
-        
-        
-        for link in Links:
-
-            self.driverReset()
-            #Opens the links as they come as parts on the webpage
-            # Some links come in as complete so this if statement determines which come in complete and which comes in as part
-            linkSplit= str(link['href']).split
-            if 'https:' in str(linkSplit):
-                url= link
-            else:
-                url='https://forums.unrealengine.com'+link
-            self.driver.get(url)
-            #Page HTML stored in PHTML
-            PHTML= self.driver.page_source
-            #Page Soup stored in PSoup
-            PSoup= BeautifulSoup(PHTML, 'html.parser')
-
-            #Getting data from the pages
-            Post_Title= self.getTitle(PSoup)
-            Leading_Post= self.getLeadingPost(PSoup)
-            Date_Created= self.getDateCreated(PSoup)
-            numViews= self.getNum_Views(PSoup)
-            numReplies= self.getNum_Replies(PSoup)
-            Tags= self.getTags(PSoup)
-            
-
-            #Attribute dictionary where we'll temporarily store the data we collect
-            attributeDict= {
-                'Post_Title': Post_Title,
-                'Leading_Comment': Leading_Post,
-                'Date_Created': Date_Created,
-                'num_of_Views': numViews,
-                'num_of_Replies': numReplies,
-                'Tags': Tags,
-                'Link': link
-            }
-            self.PostDict[Post_Title]= attributeDict
-            self.PostDf= self.PostDf.append(attributeDict, ignore_index= True)
-
-            #Testing
-            print('Title: ', Post_Title)
-            print('Leading Post', Leading_Post)
-            print('Date of Creation', Date_Created)
-
-        #Getting timestamp
-        timeStamp = datetime.now().strftime('%Y%m%d')
-
-        #Setting up csv file
-        "Please put your name here"
-        csvFilename = SiteName + '_SCRAPED_DATA' + timeStamp + '.csv'
-        csvFileFullPath = os.path.join(os.path.dirname(os.path.realpath(__file__)), csvFilename)
-        # Save dataframe into csv file
-        self.PostDf.to_csv(csvFileFullPath)
-
-if __name__ =='__main__':
-    #Local path to the webdriver
-    #webdriverPath = r'C:\Users\savan\Desktop\Coding and Software\Stemaway Coding Stuff\chromedriver.exe'
+i=1
+#Running the webscraper and Saving
+"""
+This for loop here is central to running the webscraper.
+This block looks at the links found in the page, then 'clicks' into them.
+When in the link it gets the HTML of the link and gathers the data we want (title, post, views, replies, tags, date)
+It then adds all that data to a dictionary and adds it to the one we set up before.
+That dictionary we had before will then be used to create a new csv with all the date we got
+"""
+for index, link in enumerate(Links):
+    #Tests the link to see if it is whole or partial. Some posts come with 'https:' and some only come with '/t/topic'
+    linkTest= str(link['href']).split('/')
+    if 'https:' in linkTest:
+        url= link['href']
+    else:
+        url= 'https://forums.unrealengine.com'+link['href']
+    print(i, ":", url)
+    i +=1
+    #Getting page data from post link
+    driver.get(url)
+    PostHtml= driver.page_source
+    PostSoup= BeautifulSoup(PostHtml, 'html.parser')
     
-    # Forum to scrape URL    
-    BaseURL = 'https://forums.unrealengine.com/tags/c/community/marketplace/51/launcher'
-    
-    # Name of the forum
-    SiteName = 'UnrealEngineMarketplace'
-        
-    # WebScraping object
-    webScrape = webScrape()
+    #Getting the Data from the post link
+    Title= getTitle(PostSoup)
+    Leading_Post= getLeadingPost(PostSoup)
+    Tags= getTags(PostSoup)
+    DateCreated= getDateCreated(PostSoup)
+    numViews= getNum_Views(PostSoup)
+    numReplies= getNum_Replies(PostSoup)
 
-    Links= webScrape.getLinks(BaseURL)
-    
-    # Run the webscraper and save scraped data
-    webScrape.runScraper(SiteName, Links)
-        
+    attributeDict= {
+        'Post_Title': Title,
+        'Leading_Comment': Leading_Post,
+        'Date_Created': DateCreated,
+        'Num_Views': numViews,
+        'Num_Replies': numReplies,
+        'Tags': Tags,
+        'Link': link['href']
+    }
+    print(Title)
+
+    PostDict[Titsle]= attributeDict
+    PostDf= PostDf.append(attributeDict, ignore_index= True)    
+
+#Gets the current date and time the program was run
+timeStamp = datetime.now().strftime('%Y%m%d')
+
+#Please put your name in any format here. Ensure it is recognisable as yours
+Author= 'SavP'
+
+#Put the site and category here: such as UECommunity or UEMarketplace
+SiteName= 'UEMarkeplace'
+
+#Setting up csv file's name.
+csvFilename = SiteName + '_SCRAPED_DATA' + timeStamp + '.csv'
+
+#Change the path to the path on your computer. If you do not know how, feel free to ask in the discord
+myPath= 'C:\\Users\\savan\\Desktop\\Coding and Software\\Stemaway Coding Stuff\\ClasslessWebScraper.py'
+csvFileFullPath = os.path.join(os.path.dirname(os.path.realpath(myPath)), csvFilename)
+# Save dataframe into csv file
+PostDf.to_csv(csvFileFullPath)
