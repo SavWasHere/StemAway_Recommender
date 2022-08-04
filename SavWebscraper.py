@@ -205,7 +205,7 @@ Author= 'SavP'
 SiteName= 'UEMarkeplace'
 
 #Setting up csv file's name.
-csvFilename = SiteName + '_SCRAPED_DATA' + timeStamp + '.csv'
+csvFilename = Author + SiteName + '_SCRAPED_DATA' + timeStamp + '.csv'
 
 #Change the path to the path on your computer. If you do not know how, feel free to ask in the discord
 myPath= 'C:\\Users\\savan\\Desktop\\Coding and Software\\Stemaway Coding Stuff\\ClasslessWebScraper.py'
