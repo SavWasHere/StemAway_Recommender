@@ -1,13 +1,10 @@
-import time
-import os
-import requests
+import time, os, requests, bs4
 import regex as re
 import numpy as np
 import pandas as pd
 from datetime import datetime
 from urllib.request import urlopen
 from bs4 import BeautifulSoup
-import bs4
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
